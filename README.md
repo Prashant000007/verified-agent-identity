@@ -98,7 +98,7 @@ All cryptographic material is persisted to `$HOME/.openclaw/billions/` — a dir
 | `challenges.json`  | Per-DID challenge history                                                          |
 | `credentials.json` | Verifiable credentials                                                             |
 
-Private keys are stored in plain text by default. To protect them at rest, enable master key encryption as described in the **KMS Encryption** section below.
+There are several ways of storing private keys, to enable master key encryption as described in the **KMS Encryption** section below.
 
 ### KMS Encryption
 
