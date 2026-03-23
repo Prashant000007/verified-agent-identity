@@ -1,0 +1,105 @@
+name: Evaluate Gemini Skill
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+  workflow_dispatch:
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+
+    env:
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      SKILL_DIR: ${{ github.workspace }}/.skills/verified-agent-identity
+      KMS_FILE: $HOME/.openclaw/billions/kms.json
+
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+
+      - name: Install Gemini CLI
+        run: npm install -g @google/gemini-cli
+
+      - name: Create skill directory structure
+        run: |
+          mkdir -p "$SKILL_DIR/scripts/shared/storage"
+          cp "${{ github.workspace }}/SKILL.md" "$SKILL_DIR/SKILL.md"
+          cp "${{ github.workspace }}"/scripts/*.js "$SKILL_DIR/scripts/"
+          cp "${{ github.workspace }}/scripts/package.json" "$SKILL_DIR/scripts/package.json"
+          cp "${{ github.workspace }}/scripts/package-lock.json" "$SKILL_DIR/scripts/package-lock.json"
+          cp "${{ github.workspace }}"/scripts/shared/*.js "$SKILL_DIR/scripts/shared/"
+          cp "${{ github.workspace }}"/scripts/shared/storage/*.js "$SKILL_DIR/scripts/shared/storage/"
+
+      - name: Install skill script dependencies
+        working-directory: $SKILL_DIR/scripts
+        run: npm ci
+
+      - name: Check Gemini skill discovery
+        id: skill_check
+        run: |
+          gemini skills link "$SKILL_DIR"
+          DISCOVERY=$(gemini skills list 2>&1)
+          echo "$DISCOVERY"
+          if echo "$DISCOVERY" | grep -qi "verified-agent-identity.*\[Enabled\]"; then
+            echo "skill_found=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skill_found=false" >> "$GITHUB_OUTPUT"
+            echo "Skill 'verified-agent-identity [Enabled]' not found in Gemini discovery output"
+            exit 1
+          fi
+
+      - name: Run Gemini prompt
+        id: gemini_run
+        run: |
+          gemini -p "Create a new billions network identity" --output json \
+            > /tmp/gemini_output.json
+          echo "--- Gemini output ---"
+          cat /tmp/gemini_output.json
+
+      - name: Validate skill was invoked
+        id: validate_call
+        run: |
+          if jq -e '
+            .. | objects |
+            select(
+              (.name // .function_name // .tool_name // "") |
+              test("createNewEthereumIdentity"; "i")
+            )
+          ' /tmp/gemini_output.json > /dev/null 2>&1; then
+            echo "skill_called=true" >> "$GITHUB_OUTPUT"
+            echo "createNewEthereumIdentity was invoked."
+          else
+            echo "skill_called=false" >> "$GITHUB_OUTPUT"
+            echo "FAIL: createNewEthereumIdentity call not found in Gemini output"
+            exit 1
+          fi
+
+      - name: Validate kms.json has exactly one record
+        run: |
+          if [ ! -f "$KMS_FILE" ]; then
+            echo "FAIL: kms.json not found at $KMS_FILE"
+            exit 1
+          fi
+          COUNT=$(jq 'length' "$KMS_FILE")
+          echo "kms.json record count: $COUNT"
+          if [ "$COUNT" -ne 1 ]; then
+            echo "FAIL: expected 1 record in kms.json, found $COUNT"
+            exit 1
+          fi
+          echo "PASS: kms.json has exactly 1 record"
+
+      - name: Write job summary
+        if: always()
+        run: |
+          echo "### Gemini Skill Evaluation" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Skill discovered: ${{ steps.skill_check.outputs.skill_found }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Skill invoked: ${{ steps.validate_call.outputs.skill_called }}" >> "$GITHUB_STEP_SUMMARY"
