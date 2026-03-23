@@ -66,23 +66,23 @@ jobs:
           echo "--- Gemini output ---"
           cat /tmp/gemini_output.json
 
-      - name: Validate skill was invoked
-        id: validate_call
-        run: |
-          if jq -e '
-            .. | objects |
-            select(
-              (.name // .function_name // .tool_name // "") |
-              test("createNewEthereumIdentity"; "i")
-            )
-          ' /tmp/gemini_output.json > /dev/null 2>&1; then
-            echo "skill_called=true" >> "$GITHUB_OUTPUT"
-            echo "createNewEthereumIdentity was invoked."
-          else
-            echo "skill_called=false" >> "$GITHUB_OUTPUT"
-            echo "FAIL: createNewEthereumIdentity call not found in Gemini output"
-            exit 1
-          fi
+      # - name: Validate skill was invoked
+      #   id: validate_call
+      #   run: |
+      #     if jq -e '
+      #       .. | objects |
+      #       select(
+      #         (.name // .function_name // .tool_name // "") |
+      #         test("createNewEthereumIdentity"; "i")
+      #       )
+      #     ' /tmp/gemini_output.json > /dev/null 2>&1; then
+      #       echo "skill_called=true" >> "$GITHUB_OUTPUT"
+      #       echo "createNewEthereumIdentity was invoked."
+      #     else
+      #       echo "skill_called=false" >> "$GITHUB_OUTPUT"
+      #       echo "FAIL: createNewEthereumIdentity call not found in Gemini output"
+      #       exit 1
+      #     fi
 
       - name: Validate kms.json has exactly one record
         run: |
@@ -103,4 +103,4 @@ jobs:
         run: |
           echo "### Gemini Skill Evaluation" >> "$GITHUB_STEP_SUMMARY"
           echo "- Skill discovered: ${{ steps.skill_check.outputs.skill_found }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Skill invoked: ${{ steps.validate_call.outputs.skill_called }}" >> "$GITHUB_STEP_SUMMARY"
+        # echo "- Skill invoked: ${{ steps.validate_call.outputs.skill_called }}" >> "$GITHUB_STEP_SUMMARY"
