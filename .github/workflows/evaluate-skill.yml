@@ -13,8 +13,12 @@ jobs:
 
     env:
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      REPO_DIR: ${{ github.workspace }}
       SKILL_DIR: ${{ github.workspace }}/.skills/verified-agent-identity
-      KMS_FILE: "/home/runner/.openclaw/billions/kms.json"
+      KMS_FILE: /home/runner/.openclaw/billions/kms.json
+      GEMINI_SKILLS_DIR: /home/runner/.gemini/skills
+      GEMINI_OUTPUT: /tmp/gemini_output.json
+      DID_FILE: /home/runner/.openclaw/billions/defaultDid.json
 
 
     steps:
@@ -32,21 +36,17 @@ jobs:
       - name: Create skill directory structure
         run: |
           mkdir -p "$SKILL_DIR/scripts/shared/storage"
-          cp "${{ github.workspace }}/SKILL.md" "$SKILL_DIR/SKILL.md"
-          cp "${{ github.workspace }}"/scripts/*.js "$SKILL_DIR/scripts/"
-          cp "${{ github.workspace }}/scripts/package.json" "$SKILL_DIR/scripts/package.json"
-          cp "${{ github.workspace }}/scripts/package-lock.json" "$SKILL_DIR/scripts/package-lock.json"
-          cp "${{ github.workspace }}"/scripts/shared/*.js "$SKILL_DIR/scripts/shared/"
-          cp "${{ github.workspace }}"/scripts/shared/storage/*.js "$SKILL_DIR/scripts/shared/storage/"
-
-      - name: Install skill script dependencies
-        working-directory: ${{ github.workspace }}/.skills/verified-agent-identity/scripts
-        run: npm ci
+          cp "$REPO_DIR/SKILL.md" "$SKILL_DIR/SKILL.md"
+          cp "$REPO_DIR"/scripts/*.js "$SKILL_DIR/scripts/"
+          cp "$REPO_DIR/scripts/package.json" "$SKILL_DIR/scripts/package.json"
+          cp "$REPO_DIR/scripts/package-lock.json" "$SKILL_DIR/scripts/package-lock.json"
+          cp "$REPO_DIR"/scripts/shared/*.js "$SKILL_DIR/scripts/shared/"
+          cp "$REPO_DIR"/scripts/shared/storage/*.js "$SKILL_DIR/scripts/shared/storage/"
 
       - name: Check Gemini skill discovery
         id: skill_check
         run: |
-          mkdir -p /home/runner/.gemini/skills
+          mkdir -p "$GEMINI_SKILLS_DIR"
           echo "Y" | gemini skills link "$SKILL_DIR"
           DISCOVERY=$(gemini skills list 2>&1)
           echo "$DISCOVERY"
@@ -62,27 +62,9 @@ jobs:
         id: gemini_run
         run: |
           gemini -p "Create a new billions network identity" -y --output-format json \
-            > /tmp/gemini_output.json
+            > "$GEMINI_OUTPUT"
           echo "--- Gemini output ---"
-          cat /tmp/gemini_output.json
-
-      # - name: Validate skill was invoked
-      #   id: validate_call
-      #   run: |
-      #     if jq -e '
-      #       .. | objects |
-      #       select(
-      #         (.name // .function_name // .tool_name // "") |
-      #         test("createNewEthereumIdentity"; "i")
-      #       )
-      #     ' /tmp/gemini_output.json > /dev/null 2>&1; then
-      #       echo "skill_called=true" >> "$GITHUB_OUTPUT"
-      #       echo "createNewEthereumIdentity was invoked."
-      #     else
-      #       echo "skill_called=false" >> "$GITHUB_OUTPUT"
-      #       echo "FAIL: createNewEthereumIdentity call not found in Gemini output"
-      #       exit 1
-      #     fi
+          cat "$GEMINI_OUTPUT"
 
       - name: Validate kms.json has exactly one record
         run: |
@@ -98,9 +80,31 @@ jobs:
           fi
           echo "PASS: kms.json has exactly 1 record"
 
+      - name: Validate did was created
+        id: validate_did
+        run: |
+          if [ ! -f "$DID_FILE" ]; then
+            echo "FAIL: defaultDid.json not found at $DID_FILE"
+            exit 1
+          fi
+          COUNT=$(jq 'length' "$DID_FILE")
+          echo "defaultDid.json record count: $COUNT"
+          if [ "$COUNT" -ne 1 ]; then
+            echo "FAIL: expected 1 record in defaultDid.json, found $COUNT"
+            exit 1
+          fi
+          IS_DEFAULT=$(jq -r '.[0].isDefault' "$DID_FILE")
+          if [ "$IS_DEFAULT" != "true" ]; then
+            echo "FAIL: DID is not marked as default"
+            exit 1
+          fi
+          DID=$(jq -r '.[0].did' "$DID_FILE")
+          echo "did=$DID" >> "$GITHUB_OUTPUT"
+          echo "PASS: DID was created and is default: $DID"
+
       - name: Write job summary
         if: always()
         run: |
           echo "### Gemini Skill Evaluation" >> "$GITHUB_STEP_SUMMARY"
           echo "- Skill discovered: ${{ steps.skill_check.outputs.skill_found }}" >> "$GITHUB_STEP_SUMMARY"
-        # echo "- Skill invoked: ${{ steps.validate_call.outputs.skill_called }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "- DID created: ${{ steps.validate_did.outputs.did }}" >> "$GITHUB_STEP_SUMMARY"
