@@ -1,4 +1,4 @@
-name: Evaluate Gemini Skill
+name: Evaluate Skill
 
 on:
   push:
@@ -12,14 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      REPO_DIR: ${{ github.workspace }}
-      SKILL_DIR: ${{ github.workspace }}/.skills/verified-agent-identity
-      KMS_FILE: /home/runner/.openclaw/billions/kms.json
-      GEMINI_SKILLS_DIR: /home/runner/.gemini/skills
-      GEMINI_OUTPUT: /tmp/gemini_output.json
-      DID_FILE: /home/runner/.openclaw/billions/defaultDid.json
-
+      GOOGLE_API_KEY: ${{ secrets.GEMINI_API_KEY }}
 
     steps:
       - name: Checkout repository
@@ -30,81 +23,28 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install Gemini CLI
-        run: npm install -g @google/gemini-cli
+      - name: Install promptfoo
+        run: npm install -g promptfoo
 
-      - name: Create skill directory structure
-        run: |
-          mkdir -p "$SKILL_DIR/scripts/shared/storage"
-          cp "$REPO_DIR/SKILL.md" "$SKILL_DIR/SKILL.md"
-          cp "$REPO_DIR"/scripts/*.js "$SKILL_DIR/scripts/"
-          cp "$REPO_DIR/scripts/package.json" "$SKILL_DIR/scripts/package.json"
-          cp "$REPO_DIR/scripts/package-lock.json" "$SKILL_DIR/scripts/package-lock.json"
-          cp "$REPO_DIR"/scripts/shared/*.js "$SKILL_DIR/scripts/shared/"
-          cp "$REPO_DIR"/scripts/shared/storage/*.js "$SKILL_DIR/scripts/shared/storage/"
+      - name: Run promptfoo eval
+        run: promptfoo eval --no-cache --output results.json
 
-      - name: Check Gemini skill discovery
-        id: skill_check
-        run: |
-          mkdir -p "$GEMINI_SKILLS_DIR"
-          echo "Y" | gemini skills link "$SKILL_DIR"
-          DISCOVERY=$(gemini skills list 2>&1)
-          echo "$DISCOVERY"
-          if echo "$DISCOVERY" | grep -qi "verified-agent-identity.*\[Enabled\]"; then
-            echo "skill_found=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "skill_found=false" >> "$GITHUB_OUTPUT"
-            echo "Skill 'verified-agent-identity [Enabled]' not found in Gemini discovery output"
-            exit 1
-          fi
-
-      - name: Run Gemini prompt
-        id: gemini_run
-        run: |
-          gemini -p "Create a new billions network identity" -y --output-format json \
-            > "$GEMINI_OUTPUT"
-          echo "--- Gemini output ---"
-          cat "$GEMINI_OUTPUT"
-
-      - name: Validate kms.json has exactly one record
-        run: |
-          if [ ! -f "$KMS_FILE" ]; then
-            echo "FAIL: kms.json not found at $KMS_FILE"
-            exit 1
-          fi
-          COUNT=$(jq 'length' "$KMS_FILE")
-          echo "kms.json record count: $COUNT"
-          if [ "$COUNT" -ne 1 ]; then
-            echo "FAIL: expected 1 record in kms.json, found $COUNT"
-            exit 1
-          fi
-          echo "PASS: kms.json has exactly 1 record"
-
-      - name: Validate did was created
-        id: validate_did
-        run: |
-          if [ ! -f "$DID_FILE" ]; then
-            echo "FAIL: defaultDid.json not found at $DID_FILE"
-            exit 1
-          fi
-          COUNT=$(jq 'length' "$DID_FILE")
-          echo "defaultDid.json record count: $COUNT"
-          if [ "$COUNT" -ne 1 ]; then
-            echo "FAIL: expected 1 record in defaultDid.json, found $COUNT"
-            exit 1
-          fi
-          IS_DEFAULT=$(jq -r '.[0].isDefault' "$DID_FILE")
-          if [ "$IS_DEFAULT" != "true" ]; then
-            echo "FAIL: DID is not marked as default"
-            exit 1
-          fi
-          DID=$(jq -r '.[0].did' "$DID_FILE")
-          echo "did=$DID" >> "$GITHUB_OUTPUT"
-          echo "PASS: DID was created and is default: $DID"
+      - name: Upload eval results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: promptfoo-results
+          path: results.json
 
       - name: Write job summary
         if: always()
         run: |
-          echo "### Gemini Skill Evaluation" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Skill discovered: ${{ steps.skill_check.outputs.skill_found }}" >> "$GITHUB_STEP_SUMMARY"
-          echo "- DID created: ${{ steps.validate_did.outputs.did }}" >> "$GITHUB_STEP_SUMMARY"
+          echo "### Promptfoo Skill Evaluation" >> "$GITHUB_STEP_SUMMARY"
+          if [ -f results.json ]; then
+            PASS=$(jq '[.results[] | select(.success == true)] | length' results.json)
+            FAIL=$(jq '[.results[] | select(.success == false)] | length' results.json)
+            echo "- Passed: $PASS" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Failed: $FAIL" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "- results.json not found" >> "$GITHUB_STEP_SUMMARY"
+          fi
