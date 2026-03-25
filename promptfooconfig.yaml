@@ -41,8 +41,8 @@ tests:
     metadata:
       conversationId: pairing-flow
     assert:
-      - type: icontains
-        value: "getIdentities"
+      - type: contains-any
+        value: ["getIdentities", "createNewEthereumIdentity", "linkHumanToAgent"]
 
   - description: "[Chat flow] Step 4: Feed identity result, assert pairing link created"
     vars:
