@@ -1,21 +1,23 @@
 # yaml-language-server: $schema=https://promptfoo.dev/config-schema.json
-
 # Learn more about building a configuration: https://promptfoo.dev/docs/configuration/guide
-
 description: "verified-agent-identity skill eval"
-
 defaultTest:
   vars:
     system_message: "file://SKILL.md"
-
 prompts:
   - file://prompt.json
-
 providers:
   - id: google:gemini-flash-lite-latest
     config:
-      showThinking: false # Exclude thinking content from output
-
+      showThinking: false
+      tools:
+        - functionDeclarations:
+            - name: getIdentities
+              description: "Get list of agent identities"
+            - name: createNewEthereumIdentity
+              description: "Create a new Ethereum identity"
+            - name: linkHumanToAgent
+              description: "Generate a pairing link to link human to agent"
 tests:
   - description: "[Chat flow] Step 1: List identities"
     vars:
@@ -25,7 +27,6 @@ tests:
     assert:
       - type: icontains
         value: "getIdentities"
-
   - description: "[Chat flow] Step 2: Create a new identity"
     vars:
       message: "Create a new identity"
@@ -34,7 +35,6 @@ tests:
     assert:
       - type: icontains
         value: "createNewEthereumIdentity"
-
   - description: "[Chat flow] Step 3: Generate pairing link (agent checks identity first)"
     vars:
       message: "Generate a pairing link for my agent"
@@ -43,7 +43,6 @@ tests:
     assert:
       - type: contains-any
         value: ["getIdentities", "createNewEthereumIdentity", "linkHumanToAgent"]
-
   - description: "[Chat flow] Step 4: Feed identity result, assert pairing link created"
     vars:
       message: |
