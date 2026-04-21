@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "@0xpolygonid/js-sdk": "^1.43.0",
+    "@iden3/js-iden3-auth": "^1.14.0"
+  }
+}

@@ -4,3 +4,7 @@ scripts/node_modules
 *.zip
 upload.sh
 .env
+
+undefined/
+
+node_modules/
