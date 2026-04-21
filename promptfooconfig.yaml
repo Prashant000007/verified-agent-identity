@@ -10,6 +10,8 @@ providers:
   - id: google:gemini-flash-lite-latest
     config:
       showThinking: false
+      retry:
+        times: 3
       tools:
         - functionDeclarations:
             - name: getIdentities
